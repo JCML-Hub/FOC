@@ -1,0 +1,3 @@
+E:/PROJECT/FOC/cmake-build-debug-mingw/CMakeFiles/FOC.elf.dir
+E:/PROJECT/FOC/cmake-build-debug-mingw/CMakeFiles/edit_cache.dir
+E:/PROJECT/FOC/cmake-build-debug-mingw/CMakeFiles/rebuild_cache.dir
