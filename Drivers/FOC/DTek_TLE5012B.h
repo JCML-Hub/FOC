@@ -149,7 +149,7 @@ errorTypes getAngleRange(double *angleRange);
 
 //triggers an update in the register
 void triggerUpdate(void);
-
+void TEL5012B_Init(void);
 float ReadFromSensor(uint16_t command);
 
 #ifdef __cplusplus

@@ -589,6 +589,12 @@ errorTypes getAngleRange(double *angleRange)
     *angleRange = ANGLE_360_VAL * (POW_2_7 / (double)(rawData));
     return checkError;
 }
+LowPassFilter SpeedFilter;
+void TEL5012B_Init(void){
+  SPI_CS_DISABLE;
+  readBlockCRC();//编码器初始化
+  LowPassFilter_Init(&SpeedFilter, 0.02f);
+}
 
 float ReadFromSensor(uint16_t command)
 {
@@ -614,9 +620,10 @@ float ReadFromSensor(uint16_t command)
       readreg = readreg | READ_STA_CMD_NOSAFETY;
     }
     int16_t Speed = (int16_t)readreg;
-    Speed *= 1000;
-    float out = (float)((float )Speed * 2 * 3.1415926f) / DELETE_BIT_15;
-    return out / 2.0f * 42.7f/100;
+    LowPassFilter_Calc(&SpeedFilter, (float )Speed);//此处为了消除抖动
+//    printf("%f\n",SpeedFilter.previous_output);
+    float out = (float)(SpeedFilter.previous_output * 2 * 3.1415926f);
+    return out;
   }
   else if (command == READ_TEMP_CMD){
     double temp;

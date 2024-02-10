@@ -22,57 +22,46 @@ typedef  float fp32;
 #define Constrain(input,low,high)  ((input)<(low)?(low):((input)>(high)?(high):(input))) 
 #define Max(A,B)                   ((A)>=(B)?(A):(B))
 #define Min(A,B)                   ((A)<=(B)?(A):(B))
+#define LimitMax(input, max)       \
+    {                              \
+        if (input > max) {         \
+            input = max;           \
+        } else if (input < -max) { \
+            input = -max;          \
+        }                          \
+    }
 
 #define PI    3.14159265f
 #define _2PI 6.28318530718f
 
-/* extern float SIN_TABLE[]; */
+enum PID_MODE { PID_POSITION = 0, PID_DELTA };
 
-// PID Part
-typedef struct{
-    float kp,ki,kd;         //PID参数
-}PIDParam_t;
+typedef struct pid_type {
+    uint8_t mode;
+    // PID 三参数
+    fp32 Kp;
+    fp32 Ki;
+    fp32 Kd;
 
-typedef struct{
+    fp32 max_out;   //最大输出
+    fp32 max_iout;  //最大积分输出
 
-    PIDParam_t pidParam;      //PID参数
-    
-    float lastError;        //上次误差
-    float prevError;        //前次误差
-    float output;           //输出
-    float outMINLimit;      //输出最大值限制
-    float outMAXLimit;      //输出最小值限制
-    
-}INCPIDController_t;          
+    fp32 set;
+    fp32 fdb;
 
-typedef struct{
+    fp32 out;
+    fp32 Pout;
+    fp32 Iout;
+    fp32 Dout;
+    fp32 Dbuf[3];   //微分项 0最新 1上一次 2上上次
+    fp32 error[3];  //误差项 0最新 1上一次 2上上次
 
-    PIDParam_t pidParam;      //PID参数
-    
-    float lastError;        //上次误差
-    
-    float iTerm;            //积分项
-	float integrationLimit; //积分幅限
-    
-	float FilterPercent;    //一阶低通滤波系数(0,1]
-    float output;           //输出
-    float outMINLimit;      //输出最大值限制
-    float outMAXLimit;      //输出最小值限制
-    
-}POSPIDController_t;  
+} pid_type_t;
 
-void INCPID_Update(INCPIDController_t *PID,float target,float input);
-
-/**
- * @brief  位置式PID
- * @param  PID     PID控制器指针
- * @param  target  给定值
- * @param  input   当前值
- * @param  dt      控制周期
- * @retval 
- */
-float POSPID_Update(POSPIDController_t *PID,float target,float input,float dt);
-
+void pid_init(pid_type_t *pid, uint8_t mode, const fp32 PID[5]);
+fp32 pid_calc(pid_type_t *pid, fp32 ref, fp32 set);
+void pid_clear(pid_type_t *pid);
+void pid_clear_i(pid_type_t *pid);
 
 /**
 * @brief  atoi ( ascii to integer) 为把字符串转换成整型数的一个函数

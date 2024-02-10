@@ -1,87 +1,72 @@
-/*
- * @Author       : LuHeQiu
- * @Date         : 2022-01-14 20:09:32
- * @LastEditTime : 2022-12-03 17:14:43
- * @LastEditors  : LuHeQiu
- * @Description  : 
- * @FilePath     : \motor-controller-with-foc\Software\MainController\Application\function.c
- * @HomePage     : https://www.luheqiu.com
- */
-
 #include "Function.h"
 #include <math.h>
 
-/**
- * @brief: 增量式PID
- * @param:
- * @retval: None
- */
-void INCPID_Update(INCPIDController_t *PID,float target,float input){
-    
-    //误差值计算
-    float error=target-input;
-    
-    //误差值存储
-    PID->prevError=PID->lastError;
-    PID->lastError=error;
-    
-    //PID输出计算
-    float output =( PID->output + PID->pidParam.kp*( error-PID->lastError)
-                                + PID->pidParam.ki*( error+PID->lastError)*0.5f
-                                + PID->pidParam.kd*((error-PID->lastError)-(PID->lastError-PID->prevError)) );
-    
-    //PID输出幅限
-    output = Constrain(output,PID->outMINLimit,PID->outMAXLimit);
-    
-    //PID输出更新
-    PID->output = output;
+void pid_init(pid_type_t *pid, uint8_t mode, const fp32 PID[5]) {
+  if (pid == NULL || PID == NULL) {
+    return;
+  }
+  pid->mode     = mode;
+  pid->Kp       = PID[0];
+  pid->Ki       = PID[1];
+  pid->Kd       = PID[2];
+  pid->max_out  = PID[3];
+  pid->max_iout = PID[4];
+  pid->Dbuf[0] = pid->Dbuf[1] = pid->Dbuf[2] = 0.0f;
+  pid->error[0] = pid->error[1] = pid->error[2] = pid->Pout = pid->Iout = pid->Dout = pid->out = 0.0f;
 }
 
-/**
- * @brief: 位置式PID
- * @param:
- * @retval: None
- */
-float POSPID_Update(POSPIDController_t *PID,float target,float input,float dt){
-    
-    //误差值计算
-    float error=target-input;
-    
-    //比例项
-    float pTerm=PID->pidParam.kp*error;
-    
-    //积分项
-    PID->iTerm+=(PID->pidParam.ki*(error+PID->lastError)*0.5f*dt);
-    PID->iTerm=Constrain(PID->iTerm,0-PID->integrationLimit,PID->integrationLimit);
-    
-    //微分项
-    float dTerm=PID->pidParam.kd*(error-PID->lastError)/dt;
-    
-    //误差值存储
-    PID->lastError=error;
-    
-    //PID输出计算
-    float output = pTerm + PID->iTerm + dTerm;
-    
-    //输出值滤波
-	output = PID->FilterPercent * output + (1 - PID->FilterPercent)* PID->output;
-    
-    //PID输出幅限
-    output = Constrain(output,PID->outMINLimit,PID->outMAXLimit);
-    
-    //PID输出更新
-    PID->output = output;
-    
-    return output;
+fp32 pid_calc(pid_type_t *pid, fp32 ref, fp32 set) {
+  if (pid == NULL) {
+    return 0.0f;
+  }
+  pid->error[2] = pid->error[1];
+  pid->error[1] = pid->error[0];
+  pid->error[0] = set - ref;
+  pid->set      = set;
+  pid->fdb      = ref;
+
+  if (pid->mode == PID_POSITION) {
+    pid->Pout = pid->Kp * pid->error[0];
+    pid->Iout += pid->Ki * pid->error[0];
+    pid->Dbuf[2] = pid->Dbuf[1];
+    pid->Dbuf[1] = pid->Dbuf[0];
+    pid->Dbuf[0] = (pid->error[0] - pid->error[1]);
+    pid->Dout    = pid->Kd * pid->Dbuf[0];
+    LimitMax(pid->Iout, pid->max_iout);
+    pid->out = pid->Pout + pid->Iout + pid->Dout;
+    LimitMax(pid->out, pid->max_out);
+  } else if (pid->mode == PID_DELTA) {
+    pid->Pout    = pid->Kp * (pid->error[0] - pid->error[1]);
+    pid->Iout    = pid->Ki * pid->error[0];
+    pid->Dbuf[2] = pid->Dbuf[1];
+    pid->Dbuf[1] = pid->Dbuf[0];
+    pid->Dbuf[0] = (pid->error[0] - 2.0f * pid->error[1] + pid->error[2]);
+    pid->Dout    = pid->Kd * pid->Dbuf[0];
+    pid->out += pid->Pout + pid->Iout + pid->Dout;
+    LimitMax(pid->out, pid->max_out);
+  }
+  return pid->out;
 }
 
+void pid_clear(pid_type_t *pid) {
+  if (pid == NULL) {
+    return;
+  }
 
+  pid->error[0] = pid->error[1] = pid->error[2] = 0.0f;
+  pid->Dbuf[0] = pid->Dbuf[1] = pid->Dbuf[2] = 0.0f;
+  pid->out = pid->Pout = pid->Iout = pid->Dout = 0.0f;
+  pid->fdb = pid->set = 0.0f;
+  pid->Iout = 0.0f;
+}
 
-/**
-* @brief  atoi ( ascii to integer) 为把字符串转换成整型数的一个函数
-* @param  nptr 字符串指针
-* @retval 
-*/
+void pid_clear_i(pid_type_t *pid) {
+  if (pid == NULL) {
+    return;
+  }
+  pid->Iout = 0.0f;
+}
+
 int atoi (const char* nptr){
    int n = 0, sign;
    sign = (*nptr == '-') ? (-1) : (1);  //判断符号

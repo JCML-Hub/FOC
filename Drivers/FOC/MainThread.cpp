@@ -15,12 +15,7 @@ void Main_Thread(void){
 //     printf("Data:%f,%f,%f\r\n", foc.encoder.Angle, foc.encoder.Speed, foc.encoder.Temp);
 	}
 }
-/*
-//		unsigned long now_us = micros();
-//		float Ts = (now_us - timestamp) * 1e-6f;
-//		if(Ts <= 0 || Ts > 0.5f) Ts = 1e-3f;
-//		shaft_angle = _normalizeAngle(shaft_angle + Ts * Target);
-//    _angle=_electricalAngle(shaft_angle, 12);
-//		Printf("%f\n", SinByLut(_angle));
-//		timestamp = now_us;
- * */
+
+//void ADC_DMACallback(struct __DMA_HandleTypeDef *hdma) {
+//  foc.filter();
+//}
