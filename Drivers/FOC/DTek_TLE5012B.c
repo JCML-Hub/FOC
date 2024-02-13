@@ -593,7 +593,7 @@ LowPassFilter SpeedFilter;
 void TEL5012B_Init(void){
   SPI_CS_DISABLE;
   readBlockCRC();//±àÂëÆ÷³õÊ¼»¯
-  LowPassFilter_Init(&SpeedFilter, 0.02f);
+  LowPassFilter_Init(&SpeedFilter, 0.04f);
 }
 
 float ReadFromSensor(uint16_t command)

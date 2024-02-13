@@ -12,7 +12,9 @@ extern "C" {
 #include "dma.h"
 
 /* Defines */
-#define SVPWM_PERIOD  (10000)      /* SVPWM的周期总长 当前值为5600 */
+#define MODULATION  (1.0f)      /* SVPWM的周期总长 当前值为5600 */
+#define POLE_PAIR     11
+#define SENSOR_DIRECTION  (-1)
 #define SQRT3_NUM     1.73205080757f
 #define SQRT3_2_NUM   0.86602540378f
 #define SQRT3_3_NUM   0.57735026919f
@@ -38,9 +40,11 @@ class FOC{
         /* data */
         first_order_filter_type_t SpeedFilter;
         first_order_filter_type_t AngleFilter;
-        first_order_filter_type_t Iq_filter;
         Kalman Speed;
         LowPassFilter speed;
+        LowPassFilter Id_filter;
+        LowPassFilter Iq_filter;
+
 
         fp32 Ts;
         fp32    Theta;          // 相位角
@@ -50,14 +54,17 @@ class FOC{
         Vector2 Ualpha_Beta;
         Vector2 Ialpha_Beta;
         Vector3 Iabc;
-        uint16_t ADC_Value[5]={0};
+        uint16_t ADC_Value[4]={0};
         pid_type_t Iq_PID;
+        pid_type_t Id_PID;
         pid_type_t Speed_PID;
+        pid_type_t Angle_PID;
 
         void Encoder_Update();
         void Debug();
     public:
         Encoder encoder;
+        fp32 ZeroElectricAngle;
         Vector3 Svpwm_abc;
 
         void Init();
@@ -68,7 +75,9 @@ class FOC{
         void SVPWM(Vector2 *Input, float Modulation, Vector3 *Output);
         void Update();
         static void SetPWM(Vector3 Uabc);
-
+        void FOC_electrical_angle_calibration();
+        void SetTorque(Vector2 *udq, fp32 angle_el);
+        float Get_velocity() const;
 };
 
 __weak void ADC_DMACallback(struct __DMA_HandleTypeDef *hdma);

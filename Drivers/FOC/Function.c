@@ -265,6 +265,18 @@ float _normalizeAngle(float angle)
     return a >= 0 ? a : (a + _2PI);
 }
 
+// 归一化函数
+float normalize(float value) {
+  float max = 0;
+  float min = 0;
+  float range = max - min;
+
+  // 防止除以零的错误
+  if (range == 0) return value;
+  // 归一化
+  float normalized_value = (value - min) / range;
+  return normalized_value;
+}
 float _electricalAngle(float shaft_angle, int pole_pairs){
   float a = (shaft_angle * pole_pairs);
   if (a >= 78.0f)     return 77.0f;

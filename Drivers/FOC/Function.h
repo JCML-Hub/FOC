@@ -22,6 +22,7 @@ typedef  float fp32;
 #define Constrain(input,low,high)  ((input)<(low)?(low):((input)>(high)?(high):(input))) 
 #define Max(A,B)                   ((A)>=(B)?(A):(B))
 #define Min(A,B)                   ((A)<=(B)?(A):(B))
+//#define constrain(amt,low,high) ((amt)<(low)?(low):((amt)>(high)?(high):(amt)))
 #define LimitMax(input, max)       \
     {                              \
         if (input > max) {         \
@@ -31,8 +32,8 @@ typedef  float fp32;
         }                          \
     }
 
-#define PI    3.14159265f
-#define _2PI 6.28318530718f
+#define PI      3.14159265f
+#define _2PI    6.28318530f
 
 enum PID_MODE { PID_POSITION = 0, PID_DELTA };
 

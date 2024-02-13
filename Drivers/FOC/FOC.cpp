@@ -7,16 +7,25 @@
 #include "utilities.h"
 #include "Time_utils.h"
 
-unsigned long timestamp;
-float shaft_angle, Target=10, TargetSpeed = 10;
+#define _3PI_2  4.71238898f
 
-fp32 Uq_PID_Param[5] = {2.0f, 0.0f, 0.0f, 100.0f, 100.0f};
-fp32 Speed_PID_Param[5] = {2.0f, 0.0f, 0.0f, 100.0f, 100.0f};
+unsigned long timestamp;
+float shaft_angle, Target=-25, TargetSpeed = 10.0f, TargetAngle = 1.0f;
+float Last_Angle=0;
+
+fp32 Uq_PID_Param[5] = {1.0f, 0.0f, 0.0f, 1.0f, 1.0f};
+fp32 Speed_PID_Param[5] = {0.1f, 0.0f, 0.0f, MODULATION/2, MODULATION/2};
+fp32 Angle_PID_Param[5] = {0.3f, 0.0f, 0.0f, 10.0f, 10.0f};
+
+inline float abs(float _v)
+{
+  return _v >= 0 ? _v : -_v;
+}
 
 void FOC::Init(){
   Theta = 0;
   Target_Udq.x1 = 0.0f; //  D value
-  Target_Udq.x2 = 0.4f;  //  Q Value
+  Target_Udq.x2 = 0.2f;  //  Q Value
   // 底层初始化
   TEL5012B_Init();
   HAL_TIM_PWM_Start(&htim1,TIM_CHANNEL_1);
@@ -24,14 +33,20 @@ void FOC::Init(){
   HAL_TIM_PWM_Start(&htim1,TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim4,TIM_CHANNEL_4);
   HAL_ADCEx_Calibration_Start(&hadc1);//校准ADC
-  HAL_ADC_Start_DMA(&hadc1,(uint32_t *)ADC_Value,5);
-  hdma_adc1.XferCpltCallback = ADC_DMACallback;
+  HAL_ADC_Start_DMA(&hadc1,(uint32_t *)ADC_Value,4);
+//  hdma_adc1.XferCpltCallback = ADC_DMACallback;
   HAL_GPIO_WritePin(EN_GPIO_Port,EN_Pin,GPIO_PIN_SET);
+
+  FOC_electrical_angle_calibration();
   //算法初始化f
-  first_order_filter_init(&Iq_filter, 0.001f,0.9f);
+  LowPassFilter_Init(&Iq_filter, 0.004f);
+  LowPassFilter_Init(&Id_filter, 0.004f);
+  LowPassFilter_Init(&speed, 0.1f);
 
   pid_init(&Iq_PID, PID_POSITION, Uq_PID_Param);
+  pid_init(&Id_PID, PID_POSITION, Uq_PID_Param);
   pid_init(&Speed_PID, PID_POSITION, Speed_PID_Param);
+  pid_init(&Angle_PID, PID_POSITION, Angle_PID_Param);
 }
 
 void FOC::Update(){
@@ -42,28 +57,27 @@ void FOC::Update(){
   Iabc.x3 = (float )(3875 - ADC_Value[2]) * Current_Gain;
   ClarkeTransformaion(&Iabc, &Ialpha_Beta);
   ParkTransformaion(&Ialpha_Beta, Theta, &Cerrent_Udq);//帕克 克拉克变换获取当前的Iq值
-  first_order_filter_calc(&Iq_filter, Cerrent_Udq.x2);
+  LowPassFilter_Calc(&Id_filter, Cerrent_Udq.x1);
+  LowPassFilter_Calc(&Iq_filter, Cerrent_Udq.x2);
+  LowPassFilter_Calc(&speed, encoder.Speed);
 
-  /*角度*/
-  unsigned long now_us = micros();
-  Ts = (float )(now_us - timestamp) * 1e-6f;
-  if(Ts <= 0 || Ts > 0.5f) Ts = 1e-3f;
-  shaft_angle = _normalizeAngle(shaft_angle + Ts * Target);
-  Theta=_electricalAngle(shaft_angle, 12);
+
+  Theta=_normalizeAngle(SENSOR_DIRECTION * POLE_PAIR * encoder.Angle
+                          - ZeroElectricAngle);
 
   /*闭环*/
-  Target_Udq.x2 = pid_calc(&Speed_PID, encoder.Speed, TargetSpeed);
-//  Udq.x2 = pid_calc(&Iq_PID, Target_Udq.x2, Cerrent_Udq.x2);
+  Target_Udq.x2 = pid_calc(&Speed_PID, speed.previous_output, TargetSpeed);
+  Udq.x1 = 0;//pid_calc(&Id_PID,Cerrent_Udq.x1,0);
+  Udq.x2 = 0.5;//pid_calc(&Iq_PID,Cerrent_Udq.x2,Target_Udq.x2);
 
   /*输出*/
-  InverseParkTransformaion(&Target_Udq, Theta, &Ualpha_Beta);
-  SVPWM(&Ualpha_Beta, 0.8f,&Svpwm_abc);
-  SetPWM(Svpwm_abc);
-  timestamp = now_us;
+  SetTorque(&Target_Udq, Theta);
+//  timestamp = now_us;
 
   /*调试*/
-  printf("%f,%f\n",encoder.Speed,  Target_Udq.x2);
-//  printf("%f,%f,%f,%f\n",encoder.Angle,SpeedFilter.out, Target_Udq.x2, Iq_filter.out);
+//  printf("%f,%f,%f,%f\n",SpeedFilter.out,  Target_Udq.x2, encoder.Angle,ZeroElectricAngle);
+  printf("%f,%f,%f\n",encoder.Angle,speed.previous_output, Target_Udq.x2);
+//  printf("%f,%f,%f\n",speed.previous_output, encoder.Angle, Target_Udq.x2);
 }
 
 /**
@@ -111,7 +125,7 @@ void FOC::InverseClarkeTransformaion(Vector2 *Input,  Vector3 *Output){
  */
 void FOC::ParkTransformaion(Vector2 *Input, fp32 Theta, Vector2 *Output){
   Vector2* current_dq = Output;
-//  current_dq->x1 = Input->x1 * CosByLut(Theta) + Input->x2 * SinByLut(Theta);
+  current_dq->x1 = Input->x1 * CosByLut(Theta) + Input->x2 * SinByLut(Theta);
   current_dq->x2 = -Input->x1 * SinByLut(Theta) + Input->x2 * CosByLut(Theta);
 }
 
@@ -253,21 +267,72 @@ void FOC::SVPWM(Vector2 *Input, float Modulation, Vector3 *Output){
 }
 
 void FOC:: Encoder_Update(){
-  encoder.Speed = ReadFromSensor(READ_ANGLE_SPD_CMD);
-  encoder.Angle = ReadFromSensor(READ_ANGLE_VAL_CMD);
+  encoder.Angle = ReadFromSensor(READ_ANGLE_VAL_CMD);//读出值范围为360的
+  encoder.Angle *= PI / 180.0f;
+  encoder.Speed=-Get_velocity();
   encoder.Temp  = ReadFromSensor(READ_TEMP_CMD);
 }
 
 void FOC::SetPWM(Vector3 Uabc) {
+  Uabc.x1 = Constrain(Uabc.x1, 0, SVPWM_PERIOD);//限幅
+  Uabc.x2 = Constrain(Uabc.x2, 0, SVPWM_PERIOD);
+  Uabc.x3 = Constrain(Uabc.x3, 0, SVPWM_PERIOD);
   htim1.Instance->CCR1 = (uint16_t) Uabc.x1;
   htim1.Instance->CCR2 = (uint16_t) Uabc.x2;
   htim1.Instance->CCR3 = (uint16_t) Uabc.x3;
 //  printf("%d,%d,%d\n", (uint16_t)Uabc.x1, (uint16_t)Uabc.x2, (uint16_t)Uabc.x3);
 }
 
+void FOC::SetTorque(Vector2 *udq, fp32 angle_el) {
+  InverseParkTransformaion(udq, Theta, &Ualpha_Beta);
+  SVPWM(&Ualpha_Beta, MODULATION,&Svpwm_abc);
+  SetPWM(Svpwm_abc);
+}
+
+void FOC::FOC_electrical_angle_calibration(){
+  Vector2 Temp_dq;
+  Temp_dq.x1 = 8.0f;        Temp_dq.x2 = 0.0f;
+  SetTorque(&Temp_dq, 0);
+  HAL_Delay(200);
+  Encoder_Update();
+  Last_Angle = encoder.Angle;
+  ZeroElectricAngle = _normalizeAngle(SENSOR_DIRECTION * POLE_PAIR * encoder.Angle
+                                          - ZeroElectricAngle);
+  Temp_dq.x1 = 0.0f;        Temp_dq.x2 = 0.0f;
+  SetTorque(&Temp_dq, 0);
+}
+float FOC::Get_velocity() const {
+  static uint32_t pre_tick;
+  static float last_mechanical_angle = 0;
+  float ts = (float) (HAL_GetTick() - pre_tick) * 1e-3f;
+  if (ts < 1e-3) ts = 1e-3;
+  pre_tick = HAL_GetTick();
+
+  float delta_angle = encoder.Angle - last_mechanical_angle;
+  last_mechanical_angle = encoder.Angle;
+  if (abs(delta_angle) > PI) {
+    if (delta_angle > 0) {
+      delta_angle -= _2PI;
+    } else {
+      delta_angle += _2PI;
+    }
+  }
+  return delta_angle / ts;
+}
+
 void FOC::Debug() {
 //  printf("%f,%f,%f,%f\n",Iabc.x1,Iabc.x2, Iabc.x3, Iq_filter.out);
 }
+/*Temp:
+//  unsigned long now_us = micros();
+//  Ts = (float )(now_us - timestamp) * 1e-6f;
+//  if(Ts <= 0 || Ts > 0.5f) Ts = 1e-3f;
+//  shaft_angle = _normalizeAngle(shaft_angle + Ts * Target);
+//  Theta=_electricalAngle(shaft_angle, POLE_PAIR);
+//  encoder.Speed = delta_angle / Ts;
+//  Last_Angle = encoder.Angle;
+
+ */
 
 
 

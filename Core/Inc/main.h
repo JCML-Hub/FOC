@@ -57,6 +57,7 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define SVPWM_PERIOD 3200
 #define RGB_R_Pin GPIO_PIN_13
 #define RGB_R_GPIO_Port GPIOC
 #define RGB_G_Pin GPIO_PIN_14
